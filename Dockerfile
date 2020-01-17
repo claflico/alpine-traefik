@@ -1,24 +1,25 @@
-FROM rawmind/alpine-monit:5.25-4
+FROM rawmind/alpine-monit:5.26-0
 MAINTAINER Raul Sanchez <rawmind@gmail.com>
 
 # Set environment
 ENV SERVICE_NAME=traefik \
     SERVICE_HOME=/opt/traefik \
-    SERVICE_VERSION=1.7.18 \
+    SERVICE_VERSION=2.1.2 \
     SERVICE_USER=traefik \
     SERVICE_UID=10001 \
     SERVICE_GROUP=traefik \
     SERVICE_GID=10001 \
     SERVICE_URL=https://github.com/containous/traefik/releases/download
-ENV SERVICE_RELEASE=${SERVICE_URL}/v${SERVICE_VERSION}/traefik_linux-amd64 \
+ENV SERVICE_RELEASE=${SERVICE_URL}/v${SERVICE_VERSION}/traefik_v${SERVICE_VERSION}_linux_amd64.tar.gz \
     PATH=${PATH}:${SERVICE_HOME}/bin
 
 # Download and install traefik
 RUN mkdir -p ${SERVICE_HOME}/bin ${SERVICE_HOME}/etc ${SERVICE_HOME}/log ${SERVICE_HOME}/certs ${SERVICE_HOME}/acme && \
-    apk add --no-cache libcap  && \
+    apk add --no-cache libcap && \
     cd ${SERVICE_HOME}/bin && \
     curl -jksSL "${SERVICE_RELEASE}" -O && \
-    mv traefik_linux-amd64 traefik && \
+    tar -zxvf traefik_v${SERVICE_VERSION}_linux_amd64.tar.gz && \
+    rm -rf *.gz *.md && \
     touch ${SERVICE_HOME}/etc/rules.toml && \
     chmod +x ${SERVICE_HOME}/bin/traefik && \
     addgroup -g ${SERVICE_GID} ${SERVICE_GROUP} && \
