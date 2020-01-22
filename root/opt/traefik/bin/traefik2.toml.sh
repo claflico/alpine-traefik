@@ -6,7 +6,6 @@ TRAEFIK_HTTPS_PORT=${TRAEFIK_HTTPS_PORT:-"8443"}
 TRAEFIK_HTTPS_MIN_TLS=${TRAEFIK_HTTPS_MIN_TLS:-"VersionTLS12"}
 TRAEFIK_ADMIN_ENABLE=${TRAEFIK_ADMIN_ENABLE:-"false"}
 TRAEFIK_ADMIN_PORT=${TRAEFIK_ADMIN_PORT:-"8000"}
-TRAEFIK_CONSTRAINTS=${TRAEFIK_CONSTRAINTS:-""}
 TRAEFIK_DEBUG=${TRAEFIK_DEBUG:="false"}
 TRAEFIK_LOG_LEVEL=${TRAEFIK_LOG_LEVEL:-"INFO"}
 TRAEFIK_LOG_FILE=${TRAEFIK_LOG_FILE:-${SERVICE_HOME}"/log/traefik.log"}
@@ -14,11 +13,17 @@ TRAEFIK_ACCESS_FILE=${TRAEFIK_ACCESS_FILE:-${SERVICE_HOME}"/log/access.log"}
 TRAEFIK_SSL_PATH=${TRAEFIK_SSL_PATH:-${SERVICE_HOME}"/certs"}
 TRAEFIK_SSL_KEY_FILE=${TRAEFIK_SSL_KEY_FILE:-${TRAEFIK_SSL_PATH}"/"${SERVICE_NAME}".key"}
 TRAEFIK_SSL_CRT_FILE=${TRAEFIK_SSL_CRT_FILE:-${TRAEFIK_SSL_PATH}"/"${SERVICE_NAME}".crt"}
+TRAEFIK_TLSFILE_NAME=${TRAEFIK_TLSFILE_NAME:-${SERVICE_HOME}"/etc/tls.toml"}
+TRAEFIK_TLSFILE_ENABLE=${TRAEFIK_TLSFILE_ENABLE:-"false"}
+TRAEFIK_TLSFILE_DEFAULT_KEY_FILE=${TRAEFIK_TLSFILE_DEFAULT_KEY_FILE:-${TRAEFIK_SSL_KEY_FILE}}
+TRAEFIK_TLSFILE_DEFAULT_CRT_FILE=${TRAEFIK_TLSFILE_DEFAULT_CRT_FILE:-${TRAEFIK_SSL_CRT_FILE}}
+TRAEFIK_TLSFILE_OPTS=${TRAEFIK_TLSFILE_OPTS:-""}
 TRAEFIK_RANCHER_ENABLE=${TRAEFIK_RANCHER_ENABLE:-"false"}
 TRAEFIK_RANCHER_REFRESH=${TRAEFIK_RANCHER_REFRESH:-15}
 TRAEFIK_RANCHER_EXPOSED=${TRAEFIK_RANCHER_EXPOSED:-"false"}
 TRAEFIK_RANCHER_HEALTHCHECK=${TRAEFIK_RANCHER_HEALTHCHECK:-"false"}
 TRAEFIK_RANCHER_INTERVALPOLL=${TRAEFIK_RANCHER_INTERVALPOLL:-"false"}
+TRAEFIK_RANCHER_CONSTRAINTS=${TRAEFIK_RANCHER_CONSTRAINTS:-""}
 TRAEFIK_RANCHER_OPTS=${TRAEFIK_RANCHER_OPTS:-""}
 TRAEFIK_RANCHER_PREFIX=${TRAEFIK_RANCHER_PREFIX:-"/2016-07-29"}
 TRAEFIK_USAGE_ENABLE=${TRAEFIK_USAGE_ENABLE:-"false"}
@@ -149,20 +154,11 @@ if [ "${TRAEFIK_HTTPS_ENABLE}" == "true" ] || [ "${TRAEFIK_HTTPS_ENABLE}" == "on
   [entryPoints.https]
     address = \":${TRAEFIK_HTTPS_PORT}\"
 "
-
+  #Enable creation of dynamic tls file if certs present
   filelist=`ls -1 ${TRAEFIK_SSL_PATH}/*.key | rev | cut -d"." -f2- | rev`
   RC=`echo $?`
-
   if [ $RC -eq 0 ]; then
-      for i in $filelist; do
-          if [ -f "$i.crt" ]; then
-              TRAEFIK_ENTRYPOINTS_HTTPS=$TRAEFIK_ENTRYPOINTS_HTTPS"
-[[tls.certificate]]
-  certFile = \"${i}.crt\"
-  keyFile = \"${i}.key\"
-"
-          fi
-      done
+    TRAEFIK_TLSFILE_ENABLE="true"
   fi
 fi
 
@@ -201,11 +197,33 @@ if [ "${TRAEFIK_RANCHER_ENABLE}" == "true" ]; then
   intervalPoll = ${TRAEFIK_RANCHER_INTERVALPOLL}
   prefix = \"${TRAEFIK_RANCHER_PREFIX}\"
 "
-    if [ "${TRAEFIK_CONSTRAINTS}" != "" ]; then
+    if [ "${TRAEFIK_RANCHER_CONSTRAINTS}" != "" ]; then
         TRAEFIK_RANCHER_OPTS=${TRAEFIK_RANCHER_OPTS}"\
-  constraints = [ ${TRAEFIK_CONSTRAINTS} ]
+  constraints = [ ${TRAEFIK_RANCHER_CONSTRAINTS} ]
 "
     fi
+fi
+
+if [ "${TRAEFIK_TLSFILE_ENABLE}" == "true" ]; then
+  TRAEFIK_TLSFILE_OPTS="
+[tls.stores]
+  [tls.stores.default]
+    [tls.stores.default.defaultCertificate]
+      certFile = \"${TRAEFIK_TLSFILE_DEFAULT_CRT_FILE}\"
+      keyFile  = \"${TRAEFIK_TLSFILE_DEFAULT_KEY_FILE}\"
+"
+  for i in $filelist; do
+    if [ -f "$i.crt" ]; then
+      TRAEFIK_TLSFILE_OPTS=$TRAEFIK_TLSFILE_OPTS"
+[[tls.certificates]]
+  certFile = \"${i}.crt\"
+  keyFile = \"${i}.key\"
+"
+    fi
+  done
+cat << EOF > ${TRAEFIK_TLSFILE_NAME}
+  ${TRAEFIK_TLSFILE_OPTS}
+EOF
 fi
 
 cat << EOF > ${SERVICE_HOME}/etc/traefik.toml
@@ -223,4 +241,7 @@ cat << EOF > ${SERVICE_HOME}/etc/traefik.toml
 ${TRAEFIK_ENTRYPOINTS_OPTS}
 ${TRAEFIK_ADMIN_API}
 ${TRAEFIK_RANCHER_OPTS}
+[providers]
+  [providers.file]
+    filename = "${TRAEFIK_TLSFILE_NAME}"
 EOF
