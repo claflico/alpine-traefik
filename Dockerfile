@@ -4,7 +4,7 @@ MAINTAINER Raul Sanchez <rawmind@gmail.com>
 # Set environment
 ENV SERVICE_NAME=traefik \
     SERVICE_HOME=/opt/traefik \
-    SERVICE_VERSION=2.1.2 \
+    SERVICE_VERSION=2.1.3 \
     SERVICE_USER=traefik \
     SERVICE_UID=10001 \
     SERVICE_GROUP=traefik \
@@ -14,7 +14,7 @@ ENV SERVICE_RELEASE=${SERVICE_URL}/v${SERVICE_VERSION}/traefik_v${SERVICE_VERSIO
     PATH=${PATH}:${SERVICE_HOME}/bin
 
 # Download and install traefik
-RUN mkdir -p ${SERVICE_HOME}/bin ${SERVICE_HOME}/etc ${SERVICE_HOME}/log ${SERVICE_HOME}/certs ${SERVICE_HOME}/acme && \
+RUN mkdir -p ${SERVICE_HOME}/bin ${SERVICE_HOME}/dynamic ${SERVICE_HOME}/etc ${SERVICE_HOME}/log ${SERVICE_HOME}/certs ${SERVICE_HOME}/acme && \
     apk add --no-cache libcap && \
     cd ${SERVICE_HOME}/bin && \
     curl -jksSL "${SERVICE_RELEASE}" -O && \
