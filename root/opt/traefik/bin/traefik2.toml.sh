@@ -4,20 +4,25 @@ TRAEFIK_HTTP_PORT=${TRAEFIK_HTTP_PORT:-"8080"}
 TRAEFIK_HTTPS_ENABLE=${TRAEFIK_HTTPS_ENABLE:-"false"}
 TRAEFIK_HTTPS_PORT=${TRAEFIK_HTTPS_PORT:-"8443"}
 TRAEFIK_HTTPS_MIN_TLS=${TRAEFIK_HTTPS_MIN_TLS:-"VersionTLS12"}
+TRAEFIK_HTTPS_OPTS=${TRAEFIK_HTTPS_OPTS:-""}
 TRAEFIK_ADMIN_ENABLE=${TRAEFIK_ADMIN_ENABLE:-"false"}
 TRAEFIK_ADMIN_PORT=${TRAEFIK_ADMIN_PORT:-"8000"}
 TRAEFIK_DEBUG=${TRAEFIK_DEBUG:="false"}
+TRAEFIK_INSECURE_SKIP=${TRAEFIK_INSECURE_SKIP:="false"}
 TRAEFIK_LOG_LEVEL=${TRAEFIK_LOG_LEVEL:-"INFO"}
 TRAEFIK_LOG_FILE=${TRAEFIK_LOG_FILE:-${SERVICE_HOME}"/log/traefik.log"}
 TRAEFIK_ACCESS_FILE=${TRAEFIK_ACCESS_FILE:-${SERVICE_HOME}"/log/access.log"}
 TRAEFIK_SSL_PATH=${TRAEFIK_SSL_PATH:-${SERVICE_HOME}"/certs"}
 TRAEFIK_SSL_KEY_FILE=${TRAEFIK_SSL_KEY_FILE:-${TRAEFIK_SSL_PATH}"/"${SERVICE_NAME}".key"}
 TRAEFIK_SSL_CRT_FILE=${TRAEFIK_SSL_CRT_FILE:-${TRAEFIK_SSL_PATH}"/"${SERVICE_NAME}".crt"}
-TRAEFIK_TLSFILE_NAME=${TRAEFIK_TLSFILE_NAME:-${SERVICE_HOME}"/etc/tls.toml"}
-TRAEFIK_TLSFILE_ENABLE=${TRAEFIK_TLSFILE_ENABLE:-"false"}
-TRAEFIK_TLSFILE_DEFAULT_KEY_FILE=${TRAEFIK_TLSFILE_DEFAULT_KEY_FILE:-${TRAEFIK_SSL_KEY_FILE}}
-TRAEFIK_TLSFILE_DEFAULT_CRT_FILE=${TRAEFIK_TLSFILE_DEFAULT_CRT_FILE:-${TRAEFIK_SSL_CRT_FILE}}
-TRAEFIK_TLSFILE_OPTS=${TRAEFIK_TLSFILE_OPTS:-""}
+TRAEFIK_SSL_OPTS=${TRAEFIK_SSL_OPTS:-""}
+TRAEFIK_TIMEOUT_READ=${TRAEFIK_TIMEOUT_READ:-"0"}
+TRAEFIK_TIMEOUT_WRITE=${TRAEFIK_TIMEOUT_WRITE:-"0"}
+TRAEFIK_TIMEOUT_IDLE=${TRAEFIK_TIMEOUT_IDLE:-"180"}
+TRAEFIK_TIMEOUT_DIAL=${TRAEFIK_TIMEOUT_DIAL:-"30"}
+TRAEFIK_TIMEOUT_HEADER=${TRAEFIK_TIMEOUT_HEADER:-"0"}
+TRAEFIK_TIMEOUT_GRACE=${TRAEFIK_TIMEOUT_GRACE:-"10"}
+TRAEFIK_TIMEOUT_ACCEPT=${TRAEFIK_TIMEOUT_ACCEPT:-"0"}
 TRAEFIK_RANCHER_ENABLE=${TRAEFIK_RANCHER_ENABLE:-"false"}
 TRAEFIK_RANCHER_REFRESH=${TRAEFIK_RANCHER_REFRESH:-15}
 TRAEFIK_RANCHER_EXPOSED=${TRAEFIK_RANCHER_EXPOSED:-"false"}
@@ -54,6 +59,14 @@ TRAEFIK_ENTRYPOINTS_OPTS="\
 TRAEFIK_ENTRYPOINTS_HTTP="\
   [entryPoints.http]
     address = \":${TRAEFIK_HTTP_PORT}\"
+    [entryPoints.http.transport]
+      [entryPoints.http.transport.respondingTimeouts]
+        readTimeout = \"${TRAEFIK_TIMEOUT_READ}s\"
+        writeTimeout = \"${TRAEFIK_TIMEOUT_WRITE}s\"
+        idleTimeout = \"${TRAEFIK_TIMEOUT_IDLE}s\"
+      [entryPoints.http.transport.lifecycle]
+        requestAcceptGraceTimeout = \"${TRAEFIK_TIMEOUT_ACCEPT}s\"
+        graceTimeOut = \"${TRAEFIK_TIMEOUT_GRACE}s\"
 "
 
 # Default ssl key. Could be overwritten with TRAEFIK_SSL_KEY env var.
@@ -144,22 +157,52 @@ rsdpTYCWNsbLafsTGbIWc/ddhb9SN+fnWLDpNSXKN9IU5tzUuA60ZP4lfPun26L8
 x8NPFRMB44AWyLI=
 -----END CERTIFICATE-----"}
 
-# Write key and cert files
-echo "${TRAEFIK_SSL_KEY}" > ${TRAEFIK_SSL_KEY_FILE}
-echo "${TRAEFIK_SSL_CRT}" > ${TRAEFIK_SSL_CRT_FILE}
-
+# Write key and cert files if not already exist
+if [ ! -e ${TRAEFIK_SSL_KEY_FILE} ]; then
+  echo "${TRAEFIK_SSL_KEY}" > ${TRAEFIK_SSL_KEY_FILE}
+fi
+if [ ! -e ${TRAEFIK_SSL_CRT_FILE} ]; then
+  echo "${TRAEFIK_SSL_CRT}" > ${TRAEFIK_SSL_CRT_FILE}
+fi
 
 if [ "${TRAEFIK_HTTPS_ENABLE}" == "true" ] || [ "${TRAEFIK_HTTPS_ENABLE}" == "only" ]; then
   TRAEFIK_ENTRYPOINTS_HTTPS="\
   [entryPoints.https]
     address = \":${TRAEFIK_HTTPS_PORT}\"
+    [entryPoints.https.transport]
+      [entryPoints.https.transport.respondingTimeouts]
+        readTimeout = \"${TRAEFIK_TIMEOUT_READ}s\"
+        writeTimeout = \"${TRAEFIK_TIMEOUT_WRITE}s\"
+        idleTimeout = \"${TRAEFIK_TIMEOUT_IDLE}s\"
+      [entryPoints.https.transport.lifecycle]
+        requestAcceptGraceTimeout = \"${TRAEFIK_TIMEOUT_ACCEPT}s\"
+        graceTimeOut = \"${TRAEFIK_TIMEOUT_GRACE}s\"
 "
-  #Enable creation of dynamic tls file if certs present
   filelist=`ls -1 ${TRAEFIK_SSL_PATH}/*.key | rev | cut -d"." -f2- | rev`
   RC=`echo $?`
+
   if [ $RC -eq 0 ]; then
-    TRAEFIK_TLSFILE_ENABLE="true"
+      for i in $filelist; do
+          if [ -f "$i.crt" ]; then
+      TRAEFIK_SSL_OPTS=$TRAEFIK_SSL_OPTS"
+[[tls.certificates]]
+  certFile = \"${i}.crt\"
+  keyFile = \"${i}.key\"
+"
+          fi
+      done
   fi
+
+  TRAEFIK_HTTPS_OPTS="
+[tls.stores]
+  [tls.stores.default]
+    [tls.stores.default.defaultCertificate]
+      certFile = \"${TRAEFIK_SSL_CRT_FILE}\"
+      keyFile  = \"${TRAEFIK_SSL_KEY_FILE}\"
+[tls.options]
+  [tls.options.default]
+    minVersion = \"${TRAEFIK_HTTPS_MIN_TLS}\"
+"
 fi
 
 if [ "${TRAEFIK_ADMIN_ENABLE}" == "true" ]; then
@@ -181,50 +224,51 @@ fi
 
 if [ "${TRAEFIK_HTTPS_ENABLE}" == "true" ]; then
     TRAEFIK_ENTRYPOINTS_OPTS=${TRAEFIK_ENTRYPOINTS_OPTS}${TRAEFIK_ENTRYPOINTS_HTTP}${TRAEFIK_ENTRYPOINTS_HTTPS}
-    TRAEFIK_ENTRYPOINTS='"http", "https"'
+elif [ "${TRAEFIK_HTTPS_ENABLE}" == "only" ]; then
+    TRAEFIK_ENTRYPOINTS_OPTS=${TRAEFIK_ENTRYPOINTS_OPTS}${TRAEFIK_ENTRYPOINTS_HTTP}${TRAEFIK_ENTRYPOINTS_HTTPS}
+cat << EOF > ${SERVICE_HOME}/dynamic/global_http_redirect.toml
+[http.routers]
+  [http.routers.global-https-redirect]
+    entryPoints = ["http"]
+    middlewares = ["global-https-redirect"]
+    rule = "HostRegexp(\`{any:.+}\`)"
+    service = "global-https-redirect-noop"
+[http.services]
+  # noop service, the URL will be never called
+  [http.services.global-https-redirect-noop.loadBalancer]
+    [[http.services.global-https-redirect-noop.loadBalancer.servers]]
+      url = "http://127.0.0.1:1337"
+[http.middlewares]
+  [http.middlewares.global-https-redirect.redirectScheme]
+    scheme = "https"
+    permanent = true
+EOF
 else
     TRAEFIK_ENTRYPOINTS_OPTS=${TRAEFIK_ENTRYPOINTS_OPTS}${TRAEFIK_ENTRYPOINTS_HTTP}
-    TRAEFIK_ENTRYPOINTS='"http"'
 fi
 
 if [ "${TRAEFIK_RANCHER_ENABLE}" == "true" ]; then
     TRAEFIK_RANCHER_OPTS="\
-[providers.rancher]
-  watch = true
-  refreshSeconds = ${TRAEFIK_RANCHER_REFRESH}
-  exposedByDefault = ${TRAEFIK_RANCHER_EXPOSED}
-  enableServiceHealthFilter = ${TRAEFIK_RANCHER_HEALTHCHECK}
-  intervalPoll = ${TRAEFIK_RANCHER_INTERVALPOLL}
-  prefix = \"${TRAEFIK_RANCHER_PREFIX}\"
+  [providers.rancher]
+    watch = true
+    refreshSeconds = ${TRAEFIK_RANCHER_REFRESH}
+    exposedByDefault = ${TRAEFIK_RANCHER_EXPOSED}
+    enableServiceHealthFilter = ${TRAEFIK_RANCHER_HEALTHCHECK}
+    intervalPoll = ${TRAEFIK_RANCHER_INTERVALPOLL}
+    prefix = \"${TRAEFIK_RANCHER_PREFIX}\"
 "
     if [ "${TRAEFIK_RANCHER_CONSTRAINTS}" != "" ]; then
         TRAEFIK_RANCHER_OPTS=${TRAEFIK_RANCHER_OPTS}"\
-  constraints = [ ${TRAEFIK_RANCHER_CONSTRAINTS} ]
+    constraints = [ ${TRAEFIK_RANCHER_CONSTRAINTS} ]
 "
     fi
 fi
 
-if [ "${TRAEFIK_TLSFILE_ENABLE}" == "true" ]; then
-  TRAEFIK_TLSFILE_OPTS="
-[tls.stores]
-  [tls.stores.default]
-    [tls.stores.default.defaultCertificate]
-      certFile = \"${TRAEFIK_TLSFILE_DEFAULT_CRT_FILE}\"
-      keyFile  = \"${TRAEFIK_TLSFILE_DEFAULT_KEY_FILE}\"
-"
-  for i in $filelist; do
-    if [ -f "$i.crt" ]; then
-      TRAEFIK_TLSFILE_OPTS=$TRAEFIK_TLSFILE_OPTS"
-[[tls.certificates]]
-  certFile = \"${i}.crt\"
-  keyFile = \"${i}.key\"
-"
-    fi
-  done
-cat << EOF > ${TRAEFIK_TLSFILE_NAME}
-  ${TRAEFIK_TLSFILE_OPTS}
+
+cat << EOF > ${SERVICE_HOME}/dynamic/tls.toml
+${TRAEFIK_HTTPS_OPTS}
+${TRAEFIK_SSL_OPTS}
 EOF
-fi
 
 cat << EOF > ${SERVICE_HOME}/etc/traefik.toml
 # traefik.toml
@@ -238,10 +282,17 @@ cat << EOF > ${SERVICE_HOME}/etc/traefik.toml
 [accessLog]
   filePath = "${TRAEFIK_ACCESS_FILE}"
 
+[serversTransport]
+  insecureSkipVerify = ${TRAEFIK_INSECURE_SKIP}
+  [serversTransport.forwardingTimeouts]
+    dialTimeout = "${TRAEFIK_TIMEOUT_DIAL}s"
+    responseHeaderTimeout = "${TRAEFIK_TIMEOUT_HEADER}s"
+
 ${TRAEFIK_ENTRYPOINTS_OPTS}
 ${TRAEFIK_ADMIN_API}
-${TRAEFIK_RANCHER_OPTS}
 [providers]
   [providers.file]
-    filename = "${TRAEFIK_TLSFILE_NAME}"
+    directory = "${SERVICE_HOME}/dynamic"
+    watch = true
+${TRAEFIK_RANCHER_OPTS}
 EOF
